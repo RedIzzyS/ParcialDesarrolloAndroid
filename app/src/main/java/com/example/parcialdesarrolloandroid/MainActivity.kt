@@ -58,7 +58,27 @@ import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
+import android.graphics.Bitmap
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.rememberMarkerState
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 
+
+data class PuntoInteres(
+    val nombre: String,
+    val archivo: String,
+    val ubicacion: LatLng,
+    val fecha: String
+)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -186,6 +206,12 @@ fun RecorridoApp() {
     val clienteUbicacion = remember {
         LocationServices.getFusedLocationProviderClient(context)
     }
+    val puntosInteres = remember {
+        mutableStateListOf<PuntoInteres>()
+    }
+    var puntoSeleccionado by remember {
+        mutableStateOf<PuntoInteres?>(null)
+    }
 
     var recorridoActivo by remember { mutableStateOf(false) }
     var ubicacionActual by remember { mutableStateOf<LatLng?>(null) }
@@ -273,6 +299,68 @@ fun RecorridoApp() {
             15f
         )
     }
+
+    val tomarFotografia =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.TakePicturePreview()
+        ) { imagen ->
+
+            if (imagen != null) {
+                clienteUbicacion.getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    null
+                ).addOnSuccessListener { ubicacion ->
+
+                    val posicion = ubicacion ?: ubicacionActual?.let {
+                        Location("").apply {
+                            latitude = it.latitude
+                            longitude = it.longitude
+                        }
+                    }
+
+                    if (posicion == null) {
+                        mensaje = "No se pudo obtener la ubicacion, Intenta de nuevo"
+                    } else {
+                        val nombreArchivo =
+                            "punto_${System.currentTimeMillis()}.jpg"
+
+                        val archivo = File(
+                            context.cacheDir,
+                            nombreArchivo
+                        )
+
+                        archivo.outputStream().use { salida ->
+                            imagen.compress(
+                                Bitmap.CompressFormat.JPEG,
+                                90,
+                                salida
+                            )
+                        }
+
+                        val fecha = SimpleDateFormat(
+                            "dd/MM/yyyy HH:mm:ss",
+                            Locale.getDefault()
+                        ).format(Date())
+
+                        puntosInteres.add(
+                            PuntoInteres(
+                                nombre = "Punto ${puntosInteres.size + 1}",
+                                archivo = archivo.absolutePath,
+                                ubicacion = LatLng(
+                                    posicion.latitude,
+                                    posicion.longitude
+                                ),
+                                fecha = fecha
+                            )
+                        )
+
+                        mensaje = "Punto y foto guardados correctamente"
+                    }
+                }.addOnFailureListener {
+                    mensaje = "No se pudo obtener la ubicación GPS"
+                }
+            }
+        }
 
     LaunchedEffect(ubicacionActual) {
         ubicacionActual?.let {
@@ -418,7 +506,7 @@ fun RecorridoApp() {
             GoogleMap(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(0.65f),
                 cameraPositionState = estadoCamara,
                 properties = MapProperties(
                     isMyLocationEnabled = tienePermisoUbicacion
@@ -435,7 +523,80 @@ fun RecorridoApp() {
                         width = 8f
                     )
                 }
-            }
+
+                puntosInteres.forEach { punto ->
+                    Marker(
+                        state = rememberMarkerState(position = punto.ubicacion),
+                        title = punto.nombre,
+                        snippet = punto.fecha
+                    )
+                }
+                }
+
+                Text(
+                    text = "Puntos de interés: ${puntosInteres.size}",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(90.dp)
+                ) {
+                    puntosInteres.reversed().forEach { punto ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    puntoSeleccionado = punto
+                                    estadoCamara.move(
+                                        com.google.android.gms.maps.CameraUpdateFactory
+                                            .newLatLngZoom(punto.ubicacion, 17f)
+                                    )
+                                }
+                                .padding(6.dp)
+                        ) {
+                            Text(
+                                text = punto.nombre,
+                                style = MaterialTheme.typography.titleSmall
+                            )
+
+                            Text(
+                                text = punto.fecha,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+
+                            Text(
+                                text = "Lat: ${punto.ubicacion.latitude}, " +
+                                        "Lon: ${punto.ubicacion.longitude}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+
+                val punto = puntoSeleccionado
+                val bitmap = remember(punto?.archivo) {
+                    punto?.let { BitmapFactory.decodeFile(it.archivo) }
+                }
+
+                if (punto != null) {
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = punto.nombre,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+
+                    Text(
+                        text = "Fotografía: ${punto.nombre}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -475,6 +636,19 @@ fun RecorridoApp() {
                     }
                 )
             }
+
+            Button(
+                onClick = {
+                    tomarFotografia.launch(null)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+            ) {
+                Text("Tomar foto")
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
