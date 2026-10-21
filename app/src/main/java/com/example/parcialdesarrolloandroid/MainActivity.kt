@@ -68,9 +68,12 @@ import com.google.maps.android.compose.rememberMarkerState
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.width
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 
 
 data class PuntoInteres(
@@ -541,7 +544,10 @@ fun RecorridoApp() {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(90.dp)
+                        .height(140.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .verticalScroll(rememberScrollState())
+                        .padding(8.dp)
                 ) {
                     puntosInteres.reversed().forEach { punto ->
                         Column(
